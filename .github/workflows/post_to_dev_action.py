@@ -105,26 +105,26 @@ def save_state(state):
 def find_all_blog_posts(blog_dir):
     """Find all blog post markdown files in the directory structure"""
     blog_posts = []
-    
+
     # Walk through all directories in the blog content directory
     for root, dirs, files in os.walk(blog_dir):
         for file in files:
             if file == "blog_post.md":
                 # Get the full path to the blog post
                 post_path = os.path.join(root, file)
-                
+
                 # Extract category and topic from path
                 path_parts = Path(post_path).parts
                 if len(path_parts) >= 3:
                     category = path_parts[-3]  # e.g., 10_ocr_text_recognition
                     topic = path_parts[-2]     # e.g., 01_ocr_technology
-                    
+
                     blog_posts.append({
                         "path": post_path,
                         "category": category,
                         "topic": topic
                     })
-    
+
     print(f"Found {len(blog_posts)} blog posts")
     return blog_posts
 
@@ -147,12 +147,12 @@ def get_tags_for_category(category):
             category_name = category
     else:
         category_name = category
-    
+
     # Look up in the popular tags dictionary
     for cat_key, tags in POPULAR_TAGS.items():
         if category_name in cat_key or cat_key in category_name:
             return tags
-    
+
     return DEFAULT_TAGS
 
 def post_to_dev(blog_post, state):
@@ -160,18 +160,26 @@ def post_to_dev(blog_post, state):
     if not API_KEY:
         print("Error: DEV_TO_API_KEY environment variable not set")
         return False
-    
+
     try:
         # Read the blog post content
         with open(blog_post["path"], 'r', encoding='utf-8') as f:
             content = f.read()
-        
+
         # Extract title from content
         title = extract_title_from_content(content)
-        
+
+        # Check if this article has already been posted (by path)
+        canonical_url = f"https://www.revisepdf.com/blog/{blog_post['category']}/{blog_post['topic']}"
+        for posted in state["posted_articles"]:
+            if posted["path"] == blog_post["path"] or posted.get("canonical_url") == canonical_url:
+                print(f"Article already posted: {title}")
+                # Mark as successful to move to next article
+                return True
+
         # Get tags for the category
         tags = get_tags_for_category(blog_post["category"])
-        
+
         # Prepare the article data
         article = {
             "article": {
@@ -179,39 +187,54 @@ def post_to_dev(blog_post, state):
                 "published": True,
                 "body_markdown": content,
                 "tags": tags,
-                "canonical_url": f"https://www.revisepdf.com/blog/{blog_post['category']}/{blog_post['topic']}"
+                "canonical_url": canonical_url
             }
         }
-        
+
         # Post to DEV.to
         headers = {
             "api-key": API_KEY,
             "Content-Type": "application/json"
         }
-        
+
         response = requests.post(
             DEV_API_URL,
             headers=headers,
             json=article
         )
-        
+
         if response.status_code == 201:
             print(f"Successfully posted: {title}")
-            
+
             # Update state
             state["last_post_time"] = datetime.now().isoformat()
             state["posted_articles"].append({
                 "title": title,
                 "path": blog_post["path"],
                 "posted_at": datetime.now().isoformat(),
-                "dev_id": response.json().get("id", "")
+                "dev_id": response.json().get("id", ""),
+                "canonical_url": canonical_url
             })
             save_state(state)
+            return True
+        elif response.status_code == 422 and "Canonical url has already been taken" in response.text:
+            print(f"Article with this canonical URL already exists on DEV.to: {title}")
+            # Mark this as posted in our state to avoid trying again
+            state["posted_articles"].append({
+                "title": title,
+                "path": blog_post["path"],
+                "posted_at": datetime.now().isoformat(),
+                "dev_id": "unknown",
+                "canonical_url": canonical_url,
+                "note": "Marked as posted due to canonical URL conflict"
+            })
+            save_state(state)
+            # Return true to move to the next article
             return True
         else:
             print(f"Failed to post article: {response.status_code} - {response.text}")
             return False
-            
+
     except Exception as e:
         print(f"Error posting to DEV.to: {str(e)}")
         return False
@@ -221,51 +244,58 @@ def get_next_blog_post(blog_posts, state):
     if not blog_posts:
         print("No blog posts found")
         return None
-    
+
     # Update total posts count if needed
     if state["total_posts"] != len(blog_posts):
         state["total_posts"] = len(blog_posts)
-    
+
     # Get the next post
     if state["current_index"] >= len(blog_posts):
         # Start over from the beginning
         state["current_index"] = 0
-    
+
     next_post = blog_posts[state["current_index"]]
     state["current_index"] += 1
     save_state(state)
-    
+
     return next_post
 
 def main():
     """Main function to post an article to DEV.to"""
     print("Running DEV.to posting action")
-    
+
     # Check if API key is set
     if not API_KEY:
         print("Error: DEV_TO_API_KEY environment variable not set")
         sys.exit(1)
-    
+
     # Load the latest state
     state = load_state()
-    
+
     # Find all blog posts
     blog_posts = find_all_blog_posts(BLOG_CONTENT_DIR)
-    
-    # Get the next blog post to publish
-    next_post = get_next_blog_post(blog_posts, state)
-    if next_post:
+
+    # Try to post up to 3 articles if needed (in case of conflicts)
+    max_attempts = 3
+    for attempt in range(max_attempts):
+        # Get the next blog post to publish
+        next_post = get_next_blog_post(blog_posts, state)
+        if not next_post:
+            print("No blog post available to publish")
+            sys.exit(1)
+
         # Post to DEV.to
         success = post_to_dev(next_post, state)
-        
+
         if success:
             print(f"Posted successfully. Current index: {state['current_index']}/{state['total_posts']}")
+            # Successfully posted or marked as already posted, exit with success
+            break
         else:
-            print("Failed to post article")
-            sys.exit(1)
-    else:
-        print("No blog post available to publish")
-        sys.exit(1)
+            print(f"Failed to post article (attempt {attempt+1}/{max_attempts})")
+            if attempt == max_attempts - 1:
+                # All attempts failed
+                sys.exit(1)
 
 if __name__ == "__main__":
     main()
