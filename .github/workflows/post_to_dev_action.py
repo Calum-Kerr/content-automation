@@ -275,8 +275,10 @@ def main():
     # Find all blog posts
     blog_posts = find_all_blog_posts(BLOG_CONTENT_DIR)
 
-    # Try to post up to 3 articles if needed (in case of conflicts)
-    max_attempts = 3
+    # Try to post up to 5 articles if needed (in case of conflicts)
+    max_attempts = 5
+    posted_new_article = False
+
     for attempt in range(max_attempts):
         # Get the next blog post to publish
         next_post = get_next_blog_post(blog_posts, state)
@@ -288,14 +290,27 @@ def main():
         success = post_to_dev(next_post, state)
 
         if success:
-            print(f"Posted successfully. Current index: {state['current_index']}/{state['total_posts']}")
-            # Successfully posted or marked as already posted, exit with success
-            break
+            # Check if this was a new post or just marked as already posted
+            last_posted = state["posted_articles"][-1] if state["posted_articles"] else None
+            if last_posted and last_posted.get("note") == "Marked as posted due to canonical URL conflict":
+                print(f"Article already exists on DEV.to. Trying next article. Current index: {state['current_index']}/{state['total_posts']}")
+                # This was just marked as already posted, try the next one
+                continue
+            else:
+                # Actually posted a new article
+                posted_new_article = True
+                print(f"Successfully posted new article. Current index: {state['current_index']}/{state['total_posts']}")
+                break
         else:
             print(f"Failed to post article (attempt {attempt+1}/{max_attempts})")
             if attempt == max_attempts - 1:
                 # All attempts failed
                 sys.exit(1)
+
+    if not posted_new_article:
+        print("Warning: Could not find any new articles to post after multiple attempts.")
+        # Still exit with success since we've updated the state file
+        # This will allow the workflow to continue and try again next time
 
 if __name__ == "__main__":
     main()
