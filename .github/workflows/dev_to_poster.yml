@@ -1,0 +1,56 @@
+name: DEV.to Post Scheduler
+
+on:
+  # Run on schedule for optimal posting times
+  schedule:
+    # Weekday optimal times (13:00 and 18:30 BST)
+    # Note: GitHub Actions uses UTC time, so we convert from BST (UTC+1)
+    - cron: '0 12 * * 1-5'  # 13:00 BST (12:00 UTC) Monday-Friday
+    - cron: '30 17 * * 1-5' # 18:30 BST (17:30 UTC) Monday-Friday
+    
+    # Weekend optimal times (03:00 and 07:00 BST)
+    - cron: '0 2 * * 0,6'   # 03:00 BST (02:00 UTC) Saturday,Sunday
+    - cron: '0 6 * * 0'     # 07:00 BST (06:00 UTC) Sunday only
+  
+  # Allow manual triggering for testing
+  workflow_dispatch:
+
+jobs:
+  post_to_dev:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Fetch all history to ensure we have all blog posts
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests markdown python-dotenv
+      
+      - name: Download state file if exists
+        uses: actions/download-artifact@v3
+        with:
+          name: posting-state
+          path: .
+        continue-on-error: true
+      
+      - name: Post to DEV.to
+        env:
+          DEV_TO_API_KEY: ${{ secrets.DEV_TO_API_KEY }}
+        run: |
+          python .github/workflows/post_to_dev_action.py
+      
+      - name: Upload state file
+        uses: actions/upload-artifact@v3
+        with:
+          name: posting-state
+          path: dev_posting_state.json
+          retention-days: 90
