@@ -20,6 +20,10 @@ import schedule
 import markdown
 from datetime import datetime, timedelta
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -138,26 +142,26 @@ def save_state(state):
 def find_all_blog_posts(blog_dir):
     """Find all blog post markdown files in the directory structure"""
     blog_posts = []
-    
+
     # Walk through all directories in the blog content directory
     for root, dirs, files in os.walk(blog_dir):
         for file in files:
             if file == "blog_post.md":
                 # Get the full path to the blog post
                 post_path = os.path.join(root, file)
-                
+
                 # Extract category and topic from path
                 path_parts = Path(post_path).parts
                 if len(path_parts) >= 3:
                     category = path_parts[-3]  # e.g., 10_ocr_text_recognition
                     topic = path_parts[-2]     # e.g., 01_ocr_technology
-                    
+
                     blog_posts.append({
                         "path": post_path,
                         "category": category,
                         "topic": topic
                     })
-    
+
     logger.info(f"Found {len(blog_posts)} blog posts")
     return blog_posts
 
@@ -180,12 +184,12 @@ def get_tags_for_category(category):
             category_name = category
     else:
         category_name = category
-    
+
     # Look up in the popular tags dictionary
     for cat_key, tags in POPULAR_TAGS.items():
         if category_name in cat_key or cat_key in category_name:
             return tags
-    
+
     return DEFAULT_TAGS
 
 def post_to_dev(blog_post, config, state):
@@ -193,18 +197,18 @@ def post_to_dev(blog_post, config, state):
     if not API_KEY:
         logger.error("DEV_TO_API_KEY environment variable not set")
         return False
-    
+
     try:
         # Read the blog post content
         with open(blog_post["path"], 'r', encoding='utf-8') as f:
             content = f.read()
-        
+
         # Extract title from content
         title = extract_title_from_content(content)
-        
+
         # Get tags for the category
         tags = get_tags_for_category(blog_post["category"])
-        
+
         # Prepare the article data
         article = {
             "article": {
@@ -215,22 +219,22 @@ def post_to_dev(blog_post, config, state):
                 "canonical_url": f"https://www.revisepdf.com/blog/{blog_post['category']}/{blog_post['topic']}"
             }
         }
-        
+
         # Post to DEV.to
         headers = {
             "api-key": API_KEY,
             "Content-Type": "application/json"
         }
-        
+
         response = requests.post(
             config["dev_api_url"],
             headers=headers,
             json=article
         )
-        
+
         if response.status_code == 201:
             logger.info(f"Successfully posted: {title}")
-            
+
             # Update state
             state["last_post_time"] = datetime.now().isoformat()
             state["posted_articles"].append({
@@ -244,7 +248,7 @@ def post_to_dev(blog_post, config, state):
         else:
             logger.error(f"Failed to post article: {response.status_code} - {response.text}")
             return False
-            
+
     except Exception as e:
         logger.error(f"Error posting to DEV.to: {str(e)}")
         return False
@@ -254,11 +258,11 @@ def get_next_blog_post(blog_posts, state):
     if not blog_posts:
         logger.error("No blog posts found")
         return None
-    
+
     # Update total posts count if needed
     if state["total_posts"] != len(blog_posts):
         state["total_posts"] = len(blog_posts)
-    
+
     # Get the next post
     if state["current_index"] >= len(blog_posts):
         if config["cycle_posts"]:
@@ -266,30 +270,30 @@ def get_next_blog_post(blog_posts, state):
         else:
             logger.info("All posts have been published and cycling is disabled")
             return None
-    
+
     next_post = blog_posts[state["current_index"]]
     state["current_index"] += 1
     save_state(state)
-    
+
     return next_post
 
 def post_scheduled_article():
     """Function to be called by the scheduler to post an article"""
     logger.info("Running scheduled post")
-    
+
     # Load the latest state
     state = load_state()
     config = load_config()
-    
+
     # Find all blog posts
     blog_posts = find_all_blog_posts(config["blog_content_dir"])
-    
+
     # Get the next blog post to publish
     next_post = get_next_blog_post(blog_posts, state)
     if next_post:
         # Post to DEV.to
         success = post_to_dev(next_post, config, state)
-        
+
         if success:
             # Add a random delay before the next post (if this is called multiple times in succession)
             delay = random.randint(config["post_delay_min"], config["post_delay_max"])
@@ -309,18 +313,18 @@ def setup_schedule(config):
         schedule.every().wednesday.at(time_str).do(post_scheduled_article)
         schedule.every().thursday.at(time_str).do(post_scheduled_article)
         schedule.every().friday.at(time_str).do(post_scheduled_article)
-    
+
     # Weekend schedule
     for time_str in config["weekend_times"]:
         schedule.every().saturday.at(time_str).do(post_scheduled_article)
         schedule.every().sunday.at(time_str).do(post_scheduled_article)
-    
+
     logger.info("Schedule set up successfully")
 
 def run_scheduler():
     """Run the scheduler continuously"""
     logger.info("Starting scheduler")
-    
+
     while True:
         schedule.run_pending()
         time.sleep(60)  # Check every minute
@@ -329,12 +333,12 @@ if __name__ == "__main__":
     if not API_KEY:
         logger.error("DEV_TO_API_KEY environment variable not set. Please set it before running this script.")
         sys.exit(1)
-    
+
     # Load configuration
     config = load_config()
-    
+
     # Set up the schedule
     setup_schedule(config)
-    
+
     # Run the scheduler
     run_scheduler()
