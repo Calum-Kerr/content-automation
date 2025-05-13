@@ -1,0 +1,9 @@
+{
+  "weekday_times": ["13:00", "18:30"],
+  "weekend_times": ["03:00", "07:00"],
+  "blog_content_dir": "blog_content",
+  "dev_api_url": "https://dev.to/api/articles",
+  "cycle_posts": true,
+  "post_delay_min": 5,
+  "post_delay_max": 15
+}
