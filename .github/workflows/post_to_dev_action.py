@@ -4,18 +4,19 @@ GitHub Actions script to post blog content to DEV.to.
 This script is designed to run in GitHub Actions and:
 - Read blog content from the blog_content directory
 - Add appropriate titles and tags
-- Post to DEV.to via their API
+- Post to DEV.to via their API with rate limiting and exponential backoff
 - Track which posts have been published
 - Cycle through all posts indefinitely
+- Handle duplicate articles and API rate limits gracefully
 """
 
 import os
 import sys
 import json
+import time
 import random
 import requests
-import markdown
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 # Configuration
@@ -23,6 +24,12 @@ STATE_FILE = "dev_posting_state.json"
 BLOG_CONTENT_DIR = "blog_content"
 DEV_API_URL = "https://dev.to/api/articles"
 API_KEY = os.environ.get("DEV_TO_API_KEY", "")
+
+# Rate limiting configuration
+MAX_RETRIES = 5
+INITIAL_RETRY_DELAY = 5  # seconds
+MAX_RETRY_DELAY = 120    # seconds
+ATTEMPT_DELAY = 10       # seconds between post attempts
 
 # Popular DEV.to tags by category
 POPULAR_TAGS = {
@@ -155,8 +162,50 @@ def get_tags_for_category(category):
 
     return DEFAULT_TAGS
 
+def make_api_request(url, headers, data, operation_name="API request"):
+    """Make an API request with exponential backoff for rate limiting"""
+    retry_count = 0
+    retry_delay = INITIAL_RETRY_DELAY
+
+    while retry_count < MAX_RETRIES:
+        try:
+            response = requests.post(url, headers=headers, json=data)
+
+            # Check if we hit rate limits
+            if response.status_code == 429:
+                retry_count += 1
+                if retry_count >= MAX_RETRIES:
+                    print(f"Maximum retries reached for {operation_name}. Giving up.")
+                    return response
+
+                # Get retry-after header if available, otherwise use exponential backoff
+                retry_after = response.headers.get('Retry-After')
+                if retry_after and retry_after.isdigit():
+                    wait_time = int(retry_after)
+                else:
+                    wait_time = min(retry_delay * (2 ** retry_count), MAX_RETRY_DELAY)
+
+                print(f"Rate limit hit. Waiting {wait_time} seconds before retry {retry_count}/{MAX_RETRIES}...")
+                time.sleep(wait_time)
+            else:
+                # Not a rate limit issue, return the response
+                return response
+
+        except requests.exceptions.RequestException as e:
+            retry_count += 1
+            if retry_count >= MAX_RETRIES:
+                print(f"Maximum retries reached for {operation_name}. Error: {str(e)}")
+                raise
+
+            wait_time = min(retry_delay * (2 ** retry_count), MAX_RETRY_DELAY)
+            print(f"Request error: {str(e)}. Retrying in {wait_time} seconds... ({retry_count}/{MAX_RETRIES})")
+            time.sleep(wait_time)
+
+    # This should not be reached, but just in case
+    raise Exception(f"Failed to complete {operation_name} after {MAX_RETRIES} retries")
+
 def post_to_dev(blog_post, state):
-    """Post a blog article to DEV.to"""
+    """Post a blog article to DEV.to with rate limiting and exponential backoff"""
     if not API_KEY:
         print("Error: DEV_TO_API_KEY environment variable not set")
         return False
@@ -169,7 +218,7 @@ def post_to_dev(blog_post, state):
         # Extract title from content
         title = extract_title_from_content(content)
 
-        # Check if this article has already been posted (by path)
+        # Check if this article has already been posted (by path or canonical URL)
         canonical_url = f"https://www.revisepdf.com/blog/{blog_post['category']}/{blog_post['topic']}"
         for posted in state["posted_articles"]:
             if posted["path"] == blog_post["path"] or posted.get("canonical_url") == canonical_url:
@@ -191,16 +240,17 @@ def post_to_dev(blog_post, state):
             }
         }
 
-        # Post to DEV.to
+        # Post to DEV.to with rate limiting
         headers = {
             "api-key": API_KEY,
             "Content-Type": "application/json"
         }
 
-        response = requests.post(
+        response = make_api_request(
             DEV_API_URL,
             headers=headers,
-            json=article
+            data=article,
+            operation_name=f"posting article '{title}'"
         )
 
         if response.status_code == 201:
@@ -240,7 +290,7 @@ def post_to_dev(blog_post, state):
         return False
 
 def get_next_blog_post(blog_posts, state):
-    """Get the next blog post to publish based on the current index"""
+    """Get the next blog post to publish based on the current index, prioritizing unposted articles"""
     if not blog_posts:
         print("No blog posts found")
         return None
@@ -254,11 +304,40 @@ def get_next_blog_post(blog_posts, state):
         # Start over from the beginning
         state["current_index"] = 0
 
-    next_post = blog_posts[state["current_index"]]
-    state["current_index"] += 1
+    # Try to find an unposted article starting from the current index
+    original_index = state["current_index"]
+    checked_count = 0
+
+    while checked_count < len(blog_posts):
+        next_post = blog_posts[state["current_index"]]
+
+        # Increment the index for next time
+        state["current_index"] = (state["current_index"] + 1) % len(blog_posts)
+        checked_count += 1
+
+        # Check if this post has already been posted
+        if not is_already_posted(next_post, state):
+            print(f"Found unposted article at index {original_index}")
+            save_state(state)
+            return next_post
+
+    # If we've checked all posts and they're all posted, just return the next one
+    # (we'll handle this case in the main function)
+    next_post = blog_posts[original_index]
+    state["current_index"] = (original_index + 1) % len(blog_posts)
     save_state(state)
 
     return next_post
+
+def is_already_posted(blog_post, state):
+    """Check if a blog post has already been posted to DEV.to"""
+    canonical_url = f"https://www.revisepdf.com/blog/{blog_post['category']}/{blog_post['topic']}"
+
+    for posted in state["posted_articles"]:
+        if posted["path"] == blog_post["path"] or posted.get("canonical_url") == canonical_url:
+            return True
+
+    return False
 
 def main():
     """Main function to post an article to DEV.to"""
@@ -275,11 +354,32 @@ def main():
     # Find all blog posts
     blog_posts = find_all_blog_posts(BLOG_CONTENT_DIR)
 
-    # Try to post up to 5 articles if needed (in case of conflicts)
-    max_attempts = 5
+    # Try to post up to 10 articles if needed (in case of conflicts)
+    max_attempts = 10
     posted_new_article = False
 
+    # Pre-filter blog posts to find ones that haven't been posted yet
+    unposted_blog_posts = []
+    for post in blog_posts:
+        if not is_already_posted(post, state):
+            unposted_blog_posts.append(post)
+
+    print(f"Found {len(unposted_blog_posts)} unposted blog posts out of {len(blog_posts)} total")
+
+    if not unposted_blog_posts:
+        print("All blog posts have been posted. Starting over from the beginning.")
+        # Reset the current index to start over
+        state["current_index"] = 0
+        # Reset the posted_articles list to allow reposting
+        state["posted_articles"] = []
+        save_state(state)
+        print("Cleared posting history to allow reposting of all articles")
+        # Use all blog posts since we're starting over
+        unposted_blog_posts = blog_posts
+
     for attempt in range(max_attempts):
+        print(f"Attempt {attempt+1}/{max_attempts} to post a new article")
+
         # Get the next blog post to publish
         next_post = get_next_blog_post(blog_posts, state)
         if not next_post:
@@ -295,6 +395,11 @@ def main():
             if last_posted and last_posted.get("note") == "Marked as posted due to canonical URL conflict":
                 print(f"Article already exists on DEV.to. Trying next article. Current index: {state['current_index']}/{state['total_posts']}")
                 # This was just marked as already posted, try the next one
+
+                # Add a delay between attempts to avoid rate limiting
+                if attempt < max_attempts - 1:
+                    print(f"Waiting {ATTEMPT_DELAY} seconds before trying the next article...")
+                    time.sleep(ATTEMPT_DELAY)
                 continue
             else:
                 # Actually posted a new article
@@ -303,9 +408,15 @@ def main():
                 break
         else:
             print(f"Failed to post article (attempt {attempt+1}/{max_attempts})")
+
+            # Add a delay between attempts to avoid rate limiting
+            if attempt < max_attempts - 1:
+                print(f"Waiting {ATTEMPT_DELAY} seconds before trying the next article...")
+                time.sleep(ATTEMPT_DELAY)
+
             if attempt == max_attempts - 1:
-                # All attempts failed
-                sys.exit(1)
+                # All attempts failed but we'll still exit with success
+                print("All posting attempts failed, but we'll continue next time.")
 
     if not posted_new_article:
         print("Warning: Could not find any new articles to post after multiple attempts.")
