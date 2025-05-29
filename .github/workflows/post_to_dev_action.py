@@ -22,6 +22,7 @@ from pathlib import Path
 # Configuration
 STATE_FILE = "dev_posting_state.json"
 BLOG_CONTENT_DIR = "blog_content"
+CONFIG_FILE = ".github/workflows/posting_config.json"
 DEV_API_URL = "https://dev.to/api/articles"
 API_KEY = os.environ.get("DEV_TO_API_KEY", "")
 
@@ -87,27 +88,82 @@ POPULAR_TAGS = {
 # Default tags if category not found
 DEFAULT_TAGS = ["pdf", "tutorial", "productivity", "webdev"]
 
+def load_config():
+    """Load posting configuration"""
+    default_config = {
+        "enabled": True,
+        "max_daily_posts": 2,
+        "retry_attempts": 15,
+        "emergency_reset": False,
+        "last_emergency_reset": "",
+        "notes": "Configuration file for DEV.to posting workflow"
+    }
+    
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                config = json.load(f)
+                # Merge with defaults in case of missing keys
+                for key, value in default_config.items():
+                    if key not in config:
+                        config[key] = value
+                return config
+        except (json.JSONDecodeError, FileNotFoundError) as e:
+            print(f"Error loading config file, using defaults: {e}")
+            return default_config
+    return default_config
+
 def load_state():
     """Load posting state from file or create default if not exists"""
+    # Try to load the primary state file
     if os.path.exists(STATE_FILE):
-        with open(STATE_FILE, 'r') as f:
-            return json.load(f)
-    else:
-        # Default state
-        state = {
-            "last_post_time": "",
-            "posted_articles": [],
-            "current_index": 0,
-            "total_posts": 0
-        }
-        with open(STATE_FILE, 'w') as f:
-            json.dump(state, f, indent=2)
-        return state
+        try:
+            with open(STATE_FILE, 'r') as f:
+                state = json.load(f)
+                print(f"Loaded primary state file: {len(state.get('posted_articles', []))} articles posted")
+                return state
+        except (json.JSONDecodeError, KeyError) as e:
+            print(f"Error loading primary state file: {e}")
+            # Try to load backup
+            backup_file = "dev_posting_state_backup.json"
+            if os.path.exists(backup_file):
+                try:
+                    with open(backup_file, 'r') as f:
+                        state = json.load(f)
+                        print(f"Loaded backup state file: {len(state.get('posted_articles', []))} articles posted")
+                        # Save the backup as primary
+                        save_state(state)
+                        return state
+                except (json.JSONDecodeError, KeyError) as e:
+                    print(f"Error loading backup state file: {e}")
+    
+    # If we get here, no valid state file exists, create default
+    print("Creating default state")
+    state = {
+        "last_post_time": "",
+        "posted_articles": [],
+        "current_index": 0,
+        "total_posts": 0
+    }
+    save_state(state)
+    return state
 
 def save_state(state):
-    """Save posting state to file"""
-    with open(STATE_FILE, 'w') as f:
-        json.dump(state, f, indent=2)
+    """Save posting state to file with backup"""
+    try:
+        # Save primary state file
+        with open(STATE_FILE, 'w') as f:
+            json.dump(state, f, indent=2)
+        
+        # Create backup copy
+        backup_file = "dev_posting_state_backup.json"
+        with open(backup_file, 'w') as f:
+            json.dump(state, f, indent=2)
+        
+        print(f"State saved: {len(state.get('posted_articles', []))} articles posted, index {state.get('current_index', 0)}")
+    except Exception as e:
+        print(f"Error saving state: {e}")
+        # Continue execution even if state save fails
 
 def find_all_blog_posts(blog_dir):
     """Find all blog post markdown files in the directory structure"""
@@ -283,10 +339,26 @@ def post_to_dev(blog_post, state):
             return True
         else:
             print(f"Failed to post article: {response.status_code} - {response.text}")
+            # Save state even on failure to maintain consistency
+            save_state(state)
             return False
 
+    except FileNotFoundError:
+        print(f"Blog post file not found: {blog_post['path']}")
+        return False
+    except UnicodeDecodeError:
+        print(f"Error reading blog post file (encoding issue): {blog_post['path']}")
+        return False
+    except KeyError as e:
+        print(f"Missing required data in blog post: {e}")
+        return False
     except Exception as e:
-        print(f"Error posting to DEV.to: {str(e)}")
+        print(f"Unexpected error posting to DEV.to: {str(e)}")
+        # Always save state to maintain consistency
+        try:
+            save_state(state)
+        except:
+            pass
         return False
 
 def get_next_blog_post(blog_posts, state):
@@ -343,85 +415,142 @@ def main():
     """Main function to post an article to DEV.to"""
     print("Running DEV.to posting action")
 
+    # Load configuration
+    config = load_config()
+    
+    # Check if posting is enabled
+    if not config.get("enabled", True):
+        print("Posting is disabled in configuration. Exiting.")
+        sys.exit(0)
+
     # Check if API key is set
     if not API_KEY:
         print("Error: DEV_TO_API_KEY environment variable not set")
         sys.exit(1)
 
-    # Load the latest state
-    state = load_state()
+    try:
+        # Load the latest state
+        state = load_state()
+        
+        # Check for emergency reset
+        if config.get("emergency_reset", False):
+            print("Emergency reset requested. Clearing all state and starting fresh.")
+            state = {
+                "last_post_time": "",
+                "posted_articles": [],
+                "current_index": 0,
+                "total_posts": 0
+            }
+            # Update config to disable emergency reset after use
+            config["emergency_reset"] = False
+            config["last_emergency_reset"] = datetime.now().isoformat()
+            with open(CONFIG_FILE, 'w') as f:
+                json.dump(config, f, indent=2)
+            print("Emergency reset completed.")
 
-    # Find all blog posts
-    blog_posts = find_all_blog_posts(BLOG_CONTENT_DIR)
+        # Find all blog posts
+        blog_posts = find_all_blog_posts(BLOG_CONTENT_DIR)
+        
+        if not blog_posts:
+            print("No blog posts found. Exiting gracefully.")
+            sys.exit(0)
 
-    # Try to post up to 10 articles if needed (in case of conflicts)
-    max_attempts = 10
-    posted_new_article = False
-
-    # Pre-filter blog posts to find ones that haven't been posted yet
-    unposted_blog_posts = []
-    for post in blog_posts:
-        if not is_already_posted(post, state):
-            unposted_blog_posts.append(post)
-
-    print(f"Found {len(unposted_blog_posts)} unposted blog posts out of {len(blog_posts)} total")
-
-    if not unposted_blog_posts:
-        print("All blog posts have been posted. Starting over from the beginning.")
-        # Reset the current index to start over
-        state["current_index"] = 0
-        # Reset the posted_articles list to allow reposting
-        state["posted_articles"] = []
+        # Update total posts in state
+        state["total_posts"] = len(blog_posts)
         save_state(state)
-        print("Cleared posting history to allow reposting of all articles")
-        # Use all blog posts since we're starting over
-        unposted_blog_posts = blog_posts
 
-    for attempt in range(max_attempts):
-        print(f"Attempt {attempt+1}/{max_attempts} to post a new article")
+        # Get retry attempts from config
+        max_attempts = config.get("retry_attempts", 15)
+        posted_new_article = False
 
-        # Get the next blog post to publish
-        next_post = get_next_blog_post(blog_posts, state)
-        if not next_post:
-            print("No blog post available to publish")
-            sys.exit(1)
+        # Pre-filter blog posts to find ones that haven't been posted yet
+        unposted_blog_posts = []
+        for post in blog_posts:
+            if not is_already_posted(post, state):
+                unposted_blog_posts.append(post)
 
-        # Post to DEV.to
-        success = post_to_dev(next_post, state)
+        print(f"Found {len(unposted_blog_posts)} unposted blog posts out of {len(blog_posts)} total")
 
-        if success:
-            # Check if this was a new post or just marked as already posted
-            last_posted = state["posted_articles"][-1] if state["posted_articles"] else None
-            if last_posted and last_posted.get("note") == "Marked as posted due to canonical URL conflict":
-                print(f"Article already exists on DEV.to. Trying next article. Current index: {state['current_index']}/{state['total_posts']}")
-                # This was just marked as already posted, try the next one
+        if not unposted_blog_posts:
+            print("All blog posts have been posted. Starting over from the beginning.")
+            # Reset the current index to start over
+            state["current_index"] = 0
+            # Reset the posted_articles list to allow reposting
+            state["posted_articles"] = []
+            save_state(state)
+            print("Cleared posting history to allow reposting of all articles")
+            # Use all blog posts since we're starting over
+            unposted_blog_posts = blog_posts
 
-                # Add a delay between attempts to avoid rate limiting
+        for attempt in range(max_attempts):
+            try:
+                print(f"Attempt {attempt+1}/{max_attempts} to post a new article")
+
+                # Get the next blog post to publish
+                next_post = get_next_blog_post(blog_posts, state)
+                if not next_post:
+                    print("No blog post available to publish")
+                    # Still save state and exit gracefully
+                    save_state(state)
+                    sys.exit(0)
+
+                # Post to DEV.to
+                success = post_to_dev(next_post, state)
+
+                if success:
+                    # Check if this was a new post or just marked as already posted
+                    last_posted = state["posted_articles"][-1] if state["posted_articles"] else None
+                    if last_posted and last_posted.get("note") == "Marked as posted due to canonical URL conflict":
+                        print(f"Article already exists on DEV.to. Trying next article. Current index: {state['current_index']}/{state['total_posts']}")
+                        # This was just marked as already posted, try the next one
+
+                        # Add a delay between attempts to avoid rate limiting
+                        if attempt < max_attempts - 1:
+                            print(f"Waiting {ATTEMPT_DELAY} seconds before trying the next article...")
+                            time.sleep(ATTEMPT_DELAY)
+                        continue
+                    else:
+                        # Actually posted a new article
+                        posted_new_article = True
+                        print(f"Successfully posted new article. Current index: {state['current_index']}/{state['total_posts']}")
+                        break
+                else:
+                    print(f"Failed to post article (attempt {attempt+1}/{max_attempts})")
+
+                    # Add a delay between attempts to avoid rate limiting
+                    if attempt < max_attempts - 1:
+                        print(f"Waiting {ATTEMPT_DELAY} seconds before trying the next article...")
+                        time.sleep(ATTEMPT_DELAY)
+
+            except Exception as e:
+                print(f"Error during posting attempt {attempt+1}: {e}")
+                # Save state even on error
+                save_state(state)
+                
+                # Add delay and continue to next attempt
                 if attempt < max_attempts - 1:
-                    print(f"Waiting {ATTEMPT_DELAY} seconds before trying the next article...")
+                    print(f"Waiting {ATTEMPT_DELAY} seconds before retry...")
                     time.sleep(ATTEMPT_DELAY)
                 continue
-            else:
-                # Actually posted a new article
-                posted_new_article = True
-                print(f"Successfully posted new article. Current index: {state['current_index']}/{state['total_posts']}")
-                break
-        else:
-            print(f"Failed to post article (attempt {attempt+1}/{max_attempts})")
 
-            # Add a delay between attempts to avoid rate limiting
-            if attempt < max_attempts - 1:
-                print(f"Waiting {ATTEMPT_DELAY} seconds before trying the next article...")
-                time.sleep(ATTEMPT_DELAY)
+        if not posted_new_article:
+            print("Warning: Could not find any new articles to post after multiple attempts.")
+            
+        # Always save state before exiting
+        save_state(state)
+        print("State saved successfully. Workflow will continue next time.")
 
-            if attempt == max_attempts - 1:
-                # All attempts failed but we'll still exit with success
-                print("All posting attempts failed, but we'll continue next time.")
-
-    if not posted_new_article:
-        print("Warning: Could not find any new articles to post after multiple attempts.")
-        # Still exit with success since we've updated the state file
-        # This will allow the workflow to continue and try again next time
+    except Exception as e:
+        print(f"Critical error in main function: {e}")
+        # Try to save state even on critical error
+        try:
+            if 'state' in locals():
+                save_state(state)
+        except:
+            pass
+        # Exit with success to ensure workflow continues
+        print("Exiting gracefully to ensure workflow continues.")
+        sys.exit(0)
 
 if __name__ == "__main__":
     main()

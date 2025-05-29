@@ -42,24 +42,85 @@ jobs:
           path: .
         continue-on-error: true
 
-      - name: Create empty state file if not exists
+      - name: Download backup state file if primary fails
+        uses: actions/download-artifact@v4
+        with:
+          name: posting-state-backup
+          path: .
+        continue-on-error: true
+
+      - name: Create or restore state file
         run: |
+          # Check if we have a primary state file
+          if [ -f "dev_posting_state.json" ]; then
+            echo "Primary state file exists"
+            # Validate the JSON
+            if ! python -m json.tool dev_posting_state.json > /dev/null 2>&1; then
+              echo "Primary state file is corrupted, attempting backup recovery"
+              rm -f dev_posting_state.json
+            fi
+          fi
+          
+          # If no primary state file, check for backup
+          if [ ! -f "dev_posting_state.json" ] && [ -f "dev_posting_state_backup.json" ]; then
+            echo "Restoring from backup state file"
+            cp dev_posting_state_backup.json dev_posting_state.json
+          fi
+          
+          # If still no state file, create default
           if [ ! -f "dev_posting_state.json" ]; then
             echo '{"last_post_time":"","posted_articles":[],"current_index":0,"total_posts":0}' > dev_posting_state.json
-            echo "Created empty state file"
-          else
-            echo "State file exists"
+            echo "Created default state file"
           fi
+          
+          # Always create a backup of current state
+          cp dev_posting_state.json dev_posting_state_backup.json
+          echo "Created backup of state file"
 
       - name: Post to DEV.to
         env:
           DEV_TO_API_KEY: ${{ secrets.DEV_TO_API_KEY }}
         run: |
+          # Check if posting is enabled
+          if [ -f ".github/workflows/posting_config.json" ]; then
+            enabled=$(python -c "import json; print(json.load(open('.github/workflows/posting_config.json'))['enabled'])")
+            if [ "$enabled" = "False" ]; then
+              echo "Posting is disabled in configuration. Skipping."
+              exit 0
+            fi
+          fi
+          
+          # Run the posting script
           python .github/workflows/post_to_dev_action.py
 
-      - name: Upload state file
+      - name: Upload state files
         uses: actions/upload-artifact@v4
         with:
           name: posting-state
           path: dev_posting_state.json
           retention-days: 90
+        if: always()
+
+      - name: Upload backup state file
+        uses: actions/upload-artifact@v4
+        with:
+          name: posting-state-backup
+          path: dev_posting_state_backup.json
+          retention-days: 90
+        if: always()
+
+      - name: Create alternative state persistence
+        run: |
+          # Create a timestamped backup as another safety measure
+          timestamp=$(date +"%Y%m%d_%H%M%S")
+          cp dev_posting_state.json "state_backup_${timestamp}.json"
+          echo "Created timestamped backup: state_backup_${timestamp}.json"
+        if: always()
+
+      - name: Upload timestamped backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: posting-state-timestamped-${{ github.run_number }}
+          path: state_backup_*.json
+          retention-days: 30
+        if: always()

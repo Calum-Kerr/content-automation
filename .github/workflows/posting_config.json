@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "max_daily_posts": 2,
+  "retry_attempts": 15,
+  "emergency_reset": false,
+  "last_emergency_reset": "",
+  "notes": "Configuration file for DEV.to posting workflow"
+}
