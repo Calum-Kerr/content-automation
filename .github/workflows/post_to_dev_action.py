@@ -2,7 +2,21 @@
 """
 GitHub Actions script to post blog content to DEV.to.
 This script is designed to run in GitHub Actions and:
-- Read blog content from the blog_content directory
+- Read blog content from th    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                config = json.load(f)
+                # Merge with defaults in case of missing keys
+                for key, value in default_config.items():
+                    if key not in config:
+                        config[key] = value
+                # Validate configuration values
+                config = validate_config(config)
+                return config
+        except (json.JSONDecodeError, FileNotFoundError) as e:
+            print(f"Error loading config file, using defaults: {e}")
+            return default_config
+    return default_configt directory
 - Add appropriate titles and tags
 - Post to DEV.to via their API with rate limiting and exponential backoff
 - Track which posts have been published
@@ -88,6 +102,67 @@ POPULAR_TAGS = {
 # Default tags if category not found
 DEFAULT_TAGS = ["pdf", "tutorial", "productivity", "webdev"]
 
+def validate_environment():
+    """Validate environment and prerequisites"""
+    # 1. API Key validation
+    if not API_KEY or len(API_KEY) < 10:
+        print("CRITICAL ERROR: Invalid or missing DEV_TO_API_KEY")
+        print("Please check your GitHub secrets configuration")
+        sys.exit(1)
+    
+    # 2. Blog content directory validation
+    if not os.path.exists(BLOG_CONTENT_DIR):
+        print(f"CRITICAL ERROR: Blog content directory not found: {BLOG_CONTENT_DIR}")
+        print("Repository structure may be corrupted")
+        sys.exit(1)
+    
+    # 3. Check if directory has content
+    try:
+        content_items = list(Path(BLOG_CONTENT_DIR).iterdir())
+        if not content_items:
+            print(f"CRITICAL ERROR: Blog content directory is empty: {BLOG_CONTENT_DIR}")
+            sys.exit(1)
+    except Exception as e:
+        print(f"CRITICAL ERROR: Cannot access blog content directory: {e}")
+        sys.exit(1)
+    
+    print("✅ Environment validation passed")
+
+def validate_content(content, title="Unknown"):
+    """Validate blog post content"""
+    if not content or not content.strip():
+        raise ValueError(f"Content is empty for post: {title}")
+    
+    content_length = len(content.strip())
+    if content_length < 100:
+        raise ValueError(f"Content too short ({content_length} chars) for post: {title}")
+    
+    if content_length > 65535:  # DEV.to content limit
+        raise ValueError(f"Content too long ({content_length} chars) for post: {title}. DEV.to limit is 65535 chars")
+    
+    # Check for basic markdown structure
+    if not any(marker in content for marker in ['#', '##', '###', '*', '-', '`']):
+        print(f"WARNING: Content may not be properly formatted markdown for post: {title}")
+
+def validate_config(config):
+    """Validate configuration values"""
+    if "max_daily_posts" in config:
+        if not isinstance(config["max_daily_posts"], int) or config["max_daily_posts"] < 1 or config["max_daily_posts"] > 10:
+            print("WARNING: Invalid max_daily_posts value, using default (2)")
+            config["max_daily_posts"] = 2
+    
+    if "retry_attempts" in config:
+        if not isinstance(config["retry_attempts"], int) or config["retry_attempts"] < 1 or config["retry_attempts"] > 50:
+            print("WARNING: Invalid retry_attempts value, using default (15)")
+            config["retry_attempts"] = 15
+    
+    if "enabled" in config:
+        if not isinstance(config["enabled"], bool):
+            print("WARNING: Invalid enabled value, using default (True)")
+            config["enabled"] = True
+    
+    return config
+
 def load_config():
     """Load posting configuration"""
     default_config = {
@@ -107,7 +182,7 @@ def load_config():
                 for key, value in default_config.items():
                     if key not in config:
                         config[key] = value
-                return config
+                return validate_config(config)
         except (json.JSONDecodeError, FileNotFoundError) as e:
             print(f"Error loading config file, using defaults: {e}")
             return default_config
@@ -225,7 +300,8 @@ def make_api_request(url, headers, data, operation_name="API request"):
 
     while retry_count < MAX_RETRIES:
         try:
-            response = requests.post(url, headers=headers, json=data)
+            # Add timeout handling for network requests
+            response = requests.post(url, headers=headers, json=data, timeout=30)
 
             # Check if we hit rate limits
             if response.status_code == 429:
@@ -243,8 +319,18 @@ def make_api_request(url, headers, data, operation_name="API request"):
 
                 print(f"Rate limit hit. Waiting {wait_time} seconds before retry {retry_count}/{MAX_RETRIES}...")
                 time.sleep(wait_time)
+            elif 500 <= response.status_code < 600:
+                # Server error - retry with exponential backoff
+                retry_count += 1
+                if retry_count >= MAX_RETRIES:
+                    print(f"Maximum retries reached for {operation_name} due to server errors. Giving up.")
+                    return response
+
+                wait_time = min(retry_delay * (2 ** retry_count), MAX_RETRY_DELAY)
+                print(f"Server error {response.status_code}. Waiting {wait_time} seconds before retry {retry_count}/{MAX_RETRIES}...")
+                time.sleep(wait_time)
             else:
-                # Not a rate limit issue, return the response
+                # Not a rate limit or server error, return the response
                 return response
 
         except requests.exceptions.RequestException as e:
@@ -273,6 +359,13 @@ def post_to_dev(blog_post, state):
 
         # Extract title from content
         title = extract_title_from_content(content)
+
+        # Validate content before posting
+        try:
+            validate_content(content, title)
+        except ValueError as e:
+            print(f"Content validation failed: {e}")
+            return False
 
         # Check if this article has already been posted (by path or canonical URL)
         canonical_url = f"https://www.revisepdf.com/blog/{blog_post['category']}/{blog_post['topic']}"
@@ -414,21 +507,19 @@ def is_already_posted(blog_post, state):
 def main():
     """Main function to post an article to DEV.to"""
     print("Running DEV.to posting action")
-
-    # Load configuration
-    config = load_config()
     
-    # Check if posting is enabled
-    if not config.get("enabled", True):
-        print("Posting is disabled in configuration. Exiting.")
-        sys.exit(0)
-
-    # Check if API key is set
-    if not API_KEY:
-        print("Error: DEV_TO_API_KEY environment variable not set")
-        sys.exit(1)
-
     try:
+        # Validate environment first
+        validate_environment()
+        
+        # Load configuration
+        config = load_config()
+        
+        # Check if posting is enabled
+        if not config.get("enabled", True):
+            print("Posting is disabled in configuration. Exiting.")
+            sys.exit(0)
+
         # Load the latest state
         state = load_state()
         
@@ -553,4 +644,8 @@ def main():
         sys.exit(0)
 
 if __name__ == "__main__":
+    # Validate environment before starting
+    validate_environment()
+
+    # Run the main posting logic
     main()

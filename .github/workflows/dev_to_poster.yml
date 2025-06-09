@@ -6,13 +6,29 @@ on:
     # Daily posting times (13:30 and 18:30 UTC+1 = 12:30 and 17:30 UTC)
     - cron: '30 12 * * *'   # 13:30 (12:30 UTC) Every day
     - cron: '30 17 * * *'   # 18:30 (17:30 UTC) Every day
+    
+    # Weekly cleanup of old artifacts (Sundays at 3 AM UTC)
+    - cron: '0 3 * * 0'     # Weekly cleanup
 
   # Allow manual triggering for testing
   workflow_dispatch:
 
 jobs:
+  # Weekly cleanup job
+  cleanup_artifacts:
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '0 3 * * 0'
+    
+    steps:
+      - name: Cleanup old artifacts
+        run: |
+          echo "Weekly artifact cleanup completed"
+          echo "Note: GitHub automatically removes artifacts after retention period"
+          echo "This job serves as a placeholder for future cleanup logic"
+
   post_to_dev:
     runs-on: ubuntu-latest
+    if: github.event.schedule != '0 3 * * 0'  # Skip posting during cleanup
 
     steps:
       - name: Checkout repository
