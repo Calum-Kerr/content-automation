@@ -104,6 +104,8 @@ DEFAULT_TAGS = ["pdf", "tutorial", "productivity", "webdev"]
 
 def validate_environment():
     """Validate environment and prerequisites"""
+    print("🔍 Validating environment...")
+    
     # 1. API Key validation
     if not API_KEY or len(API_KEY) < 10:
         print("CRITICAL ERROR: Invalid or missing DEV_TO_API_KEY")
@@ -122,6 +124,7 @@ def validate_environment():
         if not content_items:
             print(f"CRITICAL ERROR: Blog content directory is empty: {BLOG_CONTENT_DIR}")
             sys.exit(1)
+        print(f"✅ Found {len(content_items)} content directories")
     except Exception as e:
         print(f"CRITICAL ERROR: Cannot access blog content directory: {e}")
         sys.exit(1)
@@ -129,7 +132,7 @@ def validate_environment():
     print("✅ Environment validation passed")
 
 def validate_content(content, title="Unknown"):
-    """Validate blog post content"""
+    """Validate blog post content before posting"""
     if not content or not content.strip():
         raise ValueError(f"Content is empty for post: {title}")
     
@@ -142,24 +145,31 @@ def validate_content(content, title="Unknown"):
     
     # Check for basic markdown structure
     if not any(marker in content for marker in ['#', '##', '###', '*', '-', '`']):
-        print(f"WARNING: Content may not be properly formatted markdown for post: {title}")
+        print(f"⚠️ WARNING: Content may not be properly formatted markdown for post: {title}")
 
 def validate_config(config):
     """Validate configuration values"""
-    if "max_daily_posts" in config:
-        if not isinstance(config["max_daily_posts"], int) or config["max_daily_posts"] < 1 or config["max_daily_posts"] > 10:
-            print("WARNING: Invalid max_daily_posts value, using default (2)")
-            config["max_daily_posts"] = 2
+    errors = []
     
-    if "retry_attempts" in config:
-        if not isinstance(config["retry_attempts"], int) or config["retry_attempts"] < 1 or config["retry_attempts"] > 50:
-            print("WARNING: Invalid retry_attempts value, using default (15)")
-            config["retry_attempts"] = 15
+    if not isinstance(config.get("enabled"), bool):
+        errors.append("'enabled' must be a boolean value")
+        config["enabled"] = True
     
-    if "enabled" in config:
-        if not isinstance(config["enabled"], bool):
-            print("WARNING: Invalid enabled value, using default (True)")
-            config["enabled"] = True
+    max_posts = config.get("max_daily_posts")
+    if not isinstance(max_posts, int) or max_posts < 1 or max_posts > 10:
+        errors.append("'max_daily_posts' must be an integer between 1 and 10")
+        config["max_daily_posts"] = 2
+    
+    retry_attempts = config.get("retry_attempts")
+    if not isinstance(retry_attempts, int) or retry_attempts < 1 or retry_attempts > 50:
+        errors.append("'retry_attempts' must be an integer between 1 and 50")
+        config["retry_attempts"] = 15
+    
+    if errors:
+        print("⚠️ Configuration validation errors:")
+        for error in errors:
+            print(f"  - {error}")
+        print("Using safe default values...")
     
     return config
 
@@ -182,7 +192,9 @@ def load_config():
                 for key, value in default_config.items():
                     if key not in config:
                         config[key] = value
-                return validate_config(config)
+                # Validate configuration values
+                config = validate_config(config)
+                return config
         except (json.JSONDecodeError, FileNotFoundError) as e:
             print(f"Error loading config file, using defaults: {e}")
             return default_config

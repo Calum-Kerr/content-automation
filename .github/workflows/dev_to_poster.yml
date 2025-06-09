@@ -18,13 +18,76 @@ jobs:
   cleanup_artifacts:
     runs-on: ubuntu-latest
     if: github.event.schedule == '0 3 * * 0'
+    permissions:
+      actions: write  # Required for artifact management
     
     steps:
-      - name: Cleanup old artifacts
-        run: |
-          echo "Weekly artifact cleanup completed"
-          echo "Note: GitHub automatically removes artifacts after retention period"
-          echo "This job serves as a placeholder for future cleanup logic"
+      - name: Cleanup old posting artifacts
+        uses: actions/github-script@v7
+        with:
+          script: |
+            console.log('🧹 Starting weekly artifact cleanup...');
+            
+            // Get all artifacts from the repository
+            const artifacts = await github.rest.actions.listArtifactsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100
+            });
+            
+            console.log(`Found ${artifacts.data.artifacts.length} total artifacts`);
+            
+            // Find posting-state artifacts older than 7 days
+            const cutoffDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+            const oldArtifacts = artifacts.data.artifacts.filter(artifact => {
+              const isPostingState = artifact.name.startsWith('posting-state');
+              const isOld = new Date(artifact.created_at) < cutoffDate;
+              return isPostingState && isOld;
+            });
+            
+            console.log(`Found ${oldArtifacts.length} old posting-state artifacts to delete`);
+            
+            // Delete old artifacts
+            let deleted = 0;
+            for (const artifact of oldArtifacts) {
+              try {
+                await github.rest.actions.deleteArtifact({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  artifact_id: artifact.id
+                });
+                console.log(`✅ Deleted artifact: ${artifact.name} (${artifact.created_at})`);
+                deleted++;
+              } catch (error) {
+                console.log(`❌ Failed to delete artifact: ${artifact.name} - ${error.message}`);
+              }
+            }
+            
+            // Keep only the most recent 3 posting-state artifacts as safety buffer
+            const allPostingArtifacts = artifacts.data.artifacts
+              .filter(artifact => artifact.name.startsWith('posting-state'))
+              .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            
+            if (allPostingArtifacts.length > 3) {
+              const excessArtifacts = allPostingArtifacts.slice(3);
+              console.log(`🔄 Keeping only 3 most recent artifacts, removing ${excessArtifacts.length} excess`);
+              
+              for (const artifact of excessArtifacts) {
+                try {
+                  await github.rest.actions.deleteArtifact({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    artifact_id: artifact.id
+                  });
+                  console.log(`✅ Deleted excess artifact: ${artifact.name}`);
+                  deleted++;
+                } catch (error) {
+                  console.log(`❌ Failed to delete excess artifact: ${artifact.name} - ${error.message}`);
+                }
+              }
+            }
+            
+            console.log(`✨ Cleanup completed: ${deleted} artifacts deleted`);
 
   post_to_dev:
     runs-on: ubuntu-latest
@@ -104,21 +167,42 @@ jobs:
           # Run the posting script
           python .github/workflows/post_to_dev_action.py
 
-      - name: Upload state files
+      - name: Upload state files with retry
         uses: actions/upload-artifact@v4
         with:
           name: posting-state
           path: dev_posting_state.json
           retention-days: 90
         if: always()
+        continue-on-error: true
 
-      - name: Upload backup state file
+      - name: Upload backup state file with retry
         uses: actions/upload-artifact@v4
         with:
           name: posting-state-backup
           path: dev_posting_state_backup.json
           retention-days: 90
         if: always()
+        continue-on-error: true
+
+      - name: Emergency state backup via commit (if uploads fail)
+        run: |
+          # If artifact uploads fail, commit state to repository as emergency backup
+          if [ -f "dev_posting_state.json" ]; then
+            # Check if state file has changed
+            if git diff --quiet dev_posting_state.json 2>/dev/null; then
+              echo "No state changes to commit"
+            else
+              git config --local user.email "action@github.com"
+              git config --local user.name "GitHub Action"
+              git add dev_posting_state.json
+              git commit -m "Emergency backup: Update posting state [skip ci]" || echo "Nothing to commit"
+              git push || echo "Failed to push emergency backup"
+              echo "Emergency state backup committed to repository"
+            fi
+          fi
+        if: failure()
+        continue-on-error: true
 
       - name: Create alternative state persistence
         run: |

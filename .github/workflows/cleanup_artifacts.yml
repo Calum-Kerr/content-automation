@@ -1,0 +1,91 @@
+# Weekly cleanup of old posting-state artifacts
+# Prevents storage bloat from accumulated timestamped artifacts
+name: Cleanup Old Artifacts
+
+on:
+  # Run every Sunday at 3:00 AM UTC (4:00 AM UTC+1)
+  schedule:
+    - cron: '0 3 * * 0'
+  
+  # Allow manual triggering for immediate cleanup
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write  # Required for artifact management
+    
+    steps:
+      - name: Cleanup old artifacts
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { Octokit } = require('@octokit/rest');
+            
+            // Get all artifacts from the repository
+            const artifacts = await github.rest.actions.listArtifactsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100
+            });
+            
+            console.log(`Found ${artifacts.data.artifacts.length} total artifacts`);
+            
+            // Find posting-state artifacts older than 7 days
+            const cutoffDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+            const oldArtifacts = artifacts.data.artifacts.filter(artifact => {
+              const isPostingState = artifact.name.startsWith('posting-state');
+              const isOld = new Date(artifact.created_at) < cutoffDate;
+              return isPostingState && isOld;
+            });
+            
+            console.log(`Found ${oldArtifacts.length} old posting-state artifacts to delete`);
+            
+            // Delete old artifacts
+            let deleted = 0;
+            for (const artifact of oldArtifacts) {
+              try {
+                await github.rest.actions.deleteArtifact({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  artifact_id: artifact.id
+                });
+                console.log(`✅ Deleted artifact: ${artifact.name} (${artifact.created_at})`);
+                deleted++;
+              } catch (error) {
+                console.log(`❌ Failed to delete artifact: ${artifact.name} - ${error.message}`);
+              }
+            }
+            
+            console.log(`\n🧹 Cleanup Summary:`);
+            console.log(`  - Total artifacts checked: ${artifacts.data.artifacts.length}`);
+            console.log(`  - Old posting-state artifacts found: ${oldArtifacts.length}`);
+            console.log(`  - Successfully deleted: ${deleted}`);
+            console.log(`  - Failed deletions: ${oldArtifacts.length - deleted}`);
+            
+            // Keep only the most recent 3 posting-state artifacts as safety buffer
+            const allPostingArtifacts = artifacts.data.artifacts
+              .filter(artifact => artifact.name.startsWith('posting-state'))
+              .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            
+            if (allPostingArtifacts.length > 3) {
+              const excessArtifacts = allPostingArtifacts.slice(3);
+              console.log(`\n🔄 Additional cleanup: Keeping only 3 most recent artifacts`);
+              
+              for (const artifact of excessArtifacts) {
+                try {
+                  await github.rest.actions.deleteArtifact({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    artifact_id: artifact.id
+                  });
+                  console.log(`✅ Deleted excess artifact: ${artifact.name}`);
+                  deleted++;
+                } catch (error) {
+                  console.log(`❌ Failed to delete excess artifact: ${artifact.name} - ${error.message}`);
+                }
+              }
+            }
+            
+            console.log(`\n✨ Final cleanup result: ${deleted} artifacts deleted`);
