@@ -429,19 +429,41 @@ def post_to_dev(blog_post, state):
             save_state(state)
             return True
         elif response.status_code == 422 and "Canonical url has already been taken" in response.text:
-            print(f"Article with this canonical URL already exists on DEV.to: {title}")
-            # Mark this as posted in our state to avoid trying again
-            state["posted_articles"].append({
-                "title": title,
-                "path": blog_post["path"],
-                "posted_at": datetime.now().isoformat(),
-                "dev_id": "unknown",
-                "canonical_url": canonical_url,
-                "note": "Marked as posted due to canonical URL conflict"
-            })
-            save_state(state)
-            # Return true to move to the next article
-            return True
+            print(f"Canonical URL conflict for: {title}")
+            # Try posting without canonical URL to avoid conflicts
+            article_no_canonical = {
+                "article": {
+                    "title": title,
+                    "published": True,
+                    "body_markdown": content,
+                    "tags": tags
+                    # No canonical_url to avoid conflicts
+                }
+            }
+            
+            retry_response = make_api_request(
+                DEV_API_URL,
+                headers=headers,
+                data=article_no_canonical,
+                operation_name=f"posting article without canonical URL '{title}'"
+            )
+            
+            if retry_response.status_code == 201:
+                print(f"Successfully posted without canonical URL: {title}")
+                state["last_post_time"] = datetime.now().isoformat()
+                state["posted_articles"].append({
+                    "title": title,
+                    "path": blog_post["path"],
+                    "posted_at": datetime.now().isoformat(),
+                    "dev_id": retry_response.json().get("id", ""),
+                    "note": "Posted without canonical URL due to conflict"
+                })
+                save_state(state)
+                return True
+            else:
+                print(f"Failed to post even without canonical URL: {retry_response.status_code} - {retry_response.text}")
+                save_state(state)
+                return False
         else:
             print(f"Failed to post article: {response.status_code} - {response.text}")
             # Save state even on failure to maintain consistency
