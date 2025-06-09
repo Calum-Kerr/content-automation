@@ -108,9 +108,10 @@ The state file shows:
 - **Conflict Resolution**: Automatically handles DEV.to conflicts
 
 ### 4. Workflow Schedule
-Posts are scheduled at optimal engagement times:
-- **Weekdays**: 12:00 UTC and 17:30 UTC (Monday-Friday)
-- **Weekends**: 02:00 UTC (Saturday/Sunday) and 06:00 UTC (Sunday only)
+Posts are scheduled at consistent times every day:
+- **Daily**: 13:30 UTC+1 (12:30 UTC) and 18:30 UTC+1 (17:30 UTC)
+- **Every day of the week** including weekends
+- **No special weekend scheduling** to eliminate complexity
 
 ## File Structure
 
