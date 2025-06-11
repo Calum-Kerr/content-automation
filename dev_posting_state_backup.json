@@ -1,5 +1,5 @@
 {
-  "last_post_time": "2025-06-09T20:39:55.433972",
+  "last_post_time": "2025-06-11T21:19:30.333681",
   "posted_articles": [
     {
       "title": "The History of PDF: From Adobe's Creation to Universal Standard",
@@ -10,18 +10,200 @@
     {
       "title": "OCR Best Practices for Different Document Types",
       "path": "blog_content/10_ocr_text_recognition/09_best_practices/blog_post.md",
-      "posted_at": "2025-06-09T20:39:46.289287",
+      "posted_at": "2025-06-09T20:39:44.185Z",
       "dev_id": 2579822,
       "canonical_url": "https://www.revisepdf.com/blog/10_ocr_text_recognition/09_best_practices"
     },
     {
       "title": "OCR for Historical Documents and Unusual Fonts",
       "path": "blog_content/10_ocr_text_recognition/05_historical_documents/blog_post.md",
-      "posted_at": "2025-06-09T20:39:55.433988",
-      "dev_id": 2579823,
-      "note": "Posted without canonical URL due to conflict"
+      "posted_at": "2025-05-15T12:38:37.727Z",
+      "dev_id": 2491021,
+      "canonical_url": "https://www.revisepdf.com/blog/10_ocr_text_recognition/05_historical_documents"
+    },
+    {
+      "title": "Converting Scanned Documents to Searchable PDFs",
+      "path": "blog_content/10_ocr_text_recognition/02_searchable_pdfs/blog_post.md",
+      "posted_at": "2025-05-16T17:41:24.423Z",
+      "dev_id": 2494627,
+      "canonical_url": "https://www.revisepdf.com/blog/10_ocr_text_recognition/02_searchable_pdfs"
+    },
+    {
+      "title": "Using OCR for Data Extraction from Forms and Invoices",
+      "path": "blog_content/10_ocr_text_recognition/08_data_extraction/blog_post.md",
+      "posted_at": "2025-05-14T17:40:45.979Z",
+      "dev_id": 2488587,
+      "canonical_url": "https://www.revisepdf.com/blog/10_ocr_text_recognition/08_data_extraction"
+    },
+    {
+      "title": "Batch OCR Processing for Large Document Collections",
+      "path": "blog_content/10_ocr_text_recognition/06_batch_processing/blog_post.md",
+      "posted_at": "2025-05-15T17:41:21.669Z",
+      "dev_id": 2491740,
+      "canonical_url": "https://www.revisepdf.com/blog/10_ocr_text_recognition/06_batch_processing"
+    },
+    {
+      "title": "Improving OCR Accuracy for Better Text Recognition",
+      "path": "blog_content/10_ocr_text_recognition/03_improving_accuracy/blog_post.md",
+      "posted_at": "2025-05-16T12:38:33.548Z",
+      "dev_id": 2493953,
+      "canonical_url": "https://www.revisepdf.com/blog/10_ocr_text_recognition/03_improving_accuracy"
+    },
+    {
+      "title": "How to Add Images to Existing PDF Documents",
+      "path": "blog_content/04_pdf_editing_manipulation/04_add_images/blog_post.md",
+      "posted_at": "2025-06-10T17:40:32.404Z",
+      "dev_id": 2582719,
+      "canonical_url": "https://www.revisepdf.com/blog/04_pdf_editing_manipulation/04_add_images"
+    },
+    {
+      "title": "How to Create a Table of Contents for Large PDF Documents",
+      "path": "blog_content/04_pdf_editing_manipulation/10_table_of_contents/blog_post.md",
+      "posted_at": "2025-06-09T20:12:30.857Z",
+      "dev_id": 2579791,
+      "canonical_url": "https://www.revisepdf.com/blog/04_pdf_editing_manipulation/10_table_of_contents"
+    },
+    {
+      "title": "Cropping and Resizing PDF Pages: A Step-by-Step Guide",
+      "path": "blog_content/04_pdf_editing_manipulation/03_crop_resize/blog_post.md",
+      "posted_at": "2025-06-09T20:12:50.503Z",
+      "dev_id": 2579792,
+      "canonical_url": "https://www.revisepdf.com/blog/04_pdf_editing_manipulation/03_crop_resize"
+    },
+    {
+      "title": "Color Contrast and Readability in PDF Documents",
+      "path": "blog_content/07_pdf_accessibility/07_color_contrast/blog_post.md",
+      "posted_at": "2025-05-21T17:43:00.207Z",
+      "dev_id": 2511884,
+      "canonical_url": "https://www.revisepdf.com/blog/07_pdf_accessibility/07_color_contrast"
+    },
+    {
+      "title": "Retrofitting Existing PDFs for Accessibility",
+      "path": "blog_content/07_pdf_accessibility/10_retrofitting/blog_post.md",
+      "posted_at": "2025-05-17T03:08:37.159Z",
+      "dev_id": 2495494,
+      "canonical_url": "https://www.revisepdf.com/blog/07_pdf_accessibility/10_retrofitting"
+    },
+    {
+      "title": "Creating Accessible PDFs: A Comprehensive Guide",
+      "path": "blog_content/07_pdf_accessibility/01_comprehensive_guide/blog_post.md",
+      "posted_at": "2025-05-22T12:40:52.430Z",
+      "dev_id": 2515044,
+      "canonical_url": "https://www.revisepdf.com/blog/07_pdf_accessibility/01_comprehensive_guide"
+    },
+    {
+      "title": "Adding Alt Text to Images in PDF Documents",
+      "path": "blog_content/07_pdf_accessibility/03_alt_text/blog_post.md",
+      "posted_at": "2025-05-18T06:20:16.903Z",
+      "dev_id": 2498407,
+      "canonical_url": "https://www.revisepdf.com/blog/07_pdf_accessibility/03_alt_text"
+    },
+    {
+      "title": "Creating Proper Document Structure for Screen Readers",
+      "path": "blog_content/07_pdf_accessibility/04_document_structure/blog_post.md",
+      "posted_at": "2025-05-14T12:38:21.544Z",
+      "dev_id": 2487892,
+      "canonical_url": "https://www.revisepdf.com/blog/07_pdf_accessibility/04_document_structure"
+    },
+    {
+      "title": "Making PDF Forms Accessible to All Users",
+      "path": "blog_content/07_pdf_accessibility/06_accessible_forms/blog_post.md",
+      "posted_at": "2025-05-19T12:40:26.523Z",
+      "dev_id": 2502507,
+      "canonical_url": "https://www.revisepdf.com/blog/07_pdf_accessibility/06_accessible_forms"
+    },
+    {
+      "title": "Accessible PDF Tables and Complex Content",
+      "path": "blog_content/07_pdf_accessibility/08_tables_complex_content/blog_post.md",
+      "posted_at": "2025-05-18T03:18:24.235Z",
+      "dev_id": 2498120,
+      "canonical_url": "https://www.revisepdf.com/blog/07_pdf_accessibility/08_tables_complex_content"
+    },
+    {
+      "title": "PDF Accessibility Laws and Compliance Requirements",
+      "path": "blog_content/07_pdf_accessibility/09_laws_compliance/blog_post.md",
+      "posted_at": "2025-05-21T17:14:46.416Z",
+      "dev_id": 2511692,
+      "canonical_url": "https://www.revisepdf.com/blog/07_pdf_accessibility/09_laws_compliance"
+    },
+    {
+      "title": "Optimizing PDFs for Web: Best Practices for Faster Loading",
+      "path": "blog_content/02_pdf_compression_optimization/04_optimize_for_web/blog_post.md",
+      "posted_at": "2025-05-29T14:30:39.628Z",
+      "dev_id": 2541475,
+      "canonical_url": "https://www.revisepdf.com/blog/02_pdf_compression_optimization/04_optimize_for_web"
+    },
+    {
+      "title": "Compressing Scanned Documents: Special Considerations",
+      "path": "blog_content/02_pdf_compression_optimization/08_scanned_documents/blog_post.md",
+      "posted_at": "2025-05-23T12:39:23.895Z",
+      "dev_id": 2518754,
+      "canonical_url": "https://www.revisepdf.com/blog/02_pdf_compression_optimization/08_scanned_documents"
+    },
+    {
+      "title": "Advanced PDF Compression Techniques for Professional Users",
+      "path": "blog_content/02_pdf_compression_optimization/10_advanced_techniques/blog_post.md",
+      "posted_at": "2025-05-29T17:44:35.571Z",
+      "dev_id": 2541902,
+      "canonical_url": "https://www.revisepdf.com/blog/02_pdf_compression_optimization/10_advanced_techniques"
+    },
+    {
+      "title": "The Science Behind PDF Compression Algorithms",
+      "path": "blog_content/02_pdf_compression_optimization/02_compression_algorithms/blog_post.md",
+      "posted_at": "2025-05-31T03:14:05.829Z",
+      "dev_id": 2546902,
+      "canonical_url": "https://www.revisepdf.com/blog/02_pdf_compression_optimization/02_compression_algorithms"
+    },
+    {
+      "title": "Lossless vs Lossy PDF Compression: Understanding the Difference",
+      "path": "blog_content/02_pdf_compression_optimization/05_lossless_vs_lossy/blog_post.md",
+      "posted_at": "2025-05-30T12:40:54.176Z",
+      "dev_id": 2545142,
+      "canonical_url": "https://www.revisepdf.com/blog/02_pdf_compression_optimization/05_lossless_vs_lossy"
+    },
+    {
+      "title": "10 Ways to Reduce PDF File Size for Email Attachments",
+      "path": "blog_content/02_pdf_compression_optimization/03_reduce_size_for_email/blog_post.md",
+      "posted_at": "2025-05-22T17:43:14.016Z",
+      "dev_id": 2515746,
+      "canonical_url": "https://www.revisepdf.com/blog/02_pdf_compression_optimization/03_reduce_size_for_email"
+    },
+    {
+      "title": "How to Batch Compress Multiple PDFs at Once",
+      "path": "blog_content/02_pdf_compression_optimization/06_batch_compression/blog_post.md",
+      "posted_at": "2025-05-30T17:44:00.393Z",
+      "dev_id": 2545933,
+      "canonical_url": "https://www.revisepdf.com/blog/02_pdf_compression_optimization/06_batch_compression"
+    },
+    {
+      "title": "Exporting and Summarizing PDF Annotations",
+      "path": "blog_content/09_pdf_annotations_collaboration/07_exporting_annotations/blog_post.md",
+      "posted_at": "2025-05-13T17:58:10.529Z",
+      "dev_id": 2485210,
+      "canonical_url": "https://www.revisepdf.com/blog/09_pdf_annotations_collaboration/07_exporting_annotations"
+    },
+    {
+      "title": "Managing and Responding to PDF Comments",
+      "path": "blog_content/09_pdf_annotations_collaboration/05_managing_comments/blog_post.md",
+      "posted_at": "2025-05-13T17:12:50.009Z",
+      "dev_id": 2485123,
+      "canonical_url": "https://www.revisepdf.com/blog/09_pdf_annotations_collaboration/05_managing_comments"
+    },
+    {
+      "title": "OCR and Searchable PDFs: Making Archives Discoverable",
+      "path": "blog_content/10_ocr_text_recognition/07_archives_discoverable/blog_post.md",
+      "posted_at": "2025-06-11T21:17:54.034600",
+      "dev_id": 2585696,
+      "canonical_url": "https://www.revisepdf.com/blog/10_ocr_text_recognition/07_archives_discoverable"
+    },
+    {
+      "title": "Combining OCR with PDF Editing for Complete Workflows",
+      "path": "blog_content/10_ocr_text_recognition/10_complete_workflows/blog_post.md",
+      "posted_at": "2025-06-11T21:19:30.333698",
+      "dev_id": 2585698,
+      "canonical_url": "https://www.revisepdf.com/blog/10_ocr_text_recognition/10_complete_workflows"
     }
   ],
-  "current_index": 3,
+  "current_index": 7,
   "total_posts": 100
 }

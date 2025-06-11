@@ -488,6 +488,28 @@ def post_to_dev(blog_post, state):
             pass
         return False
 
+def devto_article_exists(title, canonical_url, api_key):
+    """Check DEV.to for an article with the same title or canonical URL."""
+    import requests
+    headers = {"api-key": api_key}
+    try:
+        # Get all articles for the user (paginated)
+        page = 1
+        while True:
+            resp = requests.get(f"https://dev.to/api/articles/me?per_page=100&page={page}", headers=headers, timeout=10)
+            if resp.status_code != 200:
+                break
+            articles = resp.json()
+            if not articles:
+                break
+            for article in articles:
+                if article.get("canonical_url") == canonical_url or article.get("title") == title:
+                    return article
+            page += 1
+    except Exception as e:
+        print(f"Error checking DEV.to for duplicates: {e}")
+    return None
+
 def get_next_blog_post(blog_posts, state):
     """Get the next blog post to publish based on the current index, prioritizing unposted articles"""
     if not blog_posts:
@@ -529,13 +551,29 @@ def get_next_blog_post(blog_posts, state):
     return next_post
 
 def is_already_posted(blog_post, state):
-    """Check if a blog post has already been posted to DEV.to"""
-    canonical_url = f"https://www.revisepdf.com/blog/{blog_post['category']}/{blog_post['topic']}"
-
+    """Check if a blog post has already been posted to DEV.to (local state + DEV.to API)"""
+    canonical_url = f"https://www.revisepdf.com/blog/{blog_post["category"]}/{blog_post["topic"]}"
+    title = blog_post.get("title")
+    # Check local state
     for posted in state["posted_articles"]:
         if posted["path"] == blog_post["path"] or posted.get("canonical_url") == canonical_url:
             return True
-
+    # Check DEV.to API
+    api_key = os.environ.get("DEV_TO_API_KEY", "")
+    if api_key:
+        article = devto_article_exists(title, canonical_url, api_key)
+        if article:
+            # Add to state if not present
+            if not any(posted.get("dev_id") == article["id"] for posted in state["posted_articles"]):
+                state["posted_articles"].append({
+                    "title": article["title"],
+                    "path": blog_post["path"],
+                    "posted_at": article["published_at"],
+                    "dev_id": article["id"],
+                    "canonical_url": article.get("canonical_url")
+                })
+                save_state(state)
+            return True
     return False
 
 def main():
@@ -607,44 +645,34 @@ def main():
             # Use all blog posts since we're starting over
             unposted_blog_posts = blog_posts
 
+        # Get the next blog post to publish ONCE
+        next_post = get_next_blog_post(blog_posts, state)
+        if not next_post:
+            print("No blog post available to publish")
+            save_state(state)
+            sys.exit(0)
+
+        print(f"Found unposted article at index {state['current_index']-1}")
+        save_state(state)
+
         for attempt in range(max_attempts):
             try:
                 print(f"Attempt {attempt+1}/{max_attempts} to post a new article")
 
-                # Get the next blog post to publish
-                next_post = get_next_blog_post(blog_posts, state)
-                if not next_post:
-                    print("No blog post available to publish")
-                    # Still save state and exit gracefully
-                    save_state(state)
-                    sys.exit(0)
-
-                # Post to DEV.to
+                # Post to DEV.to (using the same post for all retry attempts)
                 success = post_to_dev(next_post, state)
 
                 if success:
-                    # Check if this was a new post or just marked as already posted
-                    last_posted = state["posted_articles"][-1] if state["posted_articles"] else None
-                    if last_posted and last_posted.get("note") == "Marked as posted due to canonical URL conflict":
-                        print(f"Article already exists on DEV.to. Trying next article. Current index: {state['current_index']}/{state['total_posts']}")
-                        # This was just marked as already posted, try the next one
-
-                        # Add a delay between attempts to avoid rate limiting
-                        if attempt < max_attempts - 1:
-                            print(f"Waiting {ATTEMPT_DELAY} seconds before trying the next article...")
-                            time.sleep(ATTEMPT_DELAY)
-                        continue
-                    else:
-                        # Actually posted a new article
-                        posted_new_article = True
-                        print(f"Successfully posted new article. Current index: {state['current_index']}/{state['total_posts']}")
-                        break
+                    # Successfully posted or handled the article
+                    posted_new_article = True
+                    print(f"Successfully posted new article. Current index: {state['current_index']}/{state['total_posts']}")
+                    break
                 else:
                     print(f"Failed to post article (attempt {attempt+1}/{max_attempts})")
 
                     # Add a delay between attempts to avoid rate limiting
                     if attempt < max_attempts - 1:
-                        print(f"Waiting {ATTEMPT_DELAY} seconds before trying the next article...")
+                        print(f"Waiting {ATTEMPT_DELAY} seconds before retrying...")
                         time.sleep(ATTEMPT_DELAY)
 
             except Exception as e:
