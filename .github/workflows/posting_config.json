@@ -1,5 +1,5 @@
 {
-  "enabled": true,
+  "enabled": false,
   "max_daily_posts": 2,
   "retry_attempts": 15,
   "emergency_reset": false,
